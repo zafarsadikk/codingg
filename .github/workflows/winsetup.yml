@@ -1,55 +1,42 @@
-name: Setup Windows Server
+name: setup-windows-server
 
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   setup-windows-server:
     runs-on: windows-latest
 
     steps:
-      - name: Set up job
-        run: echo "Starting Windows Server Setup"
-        shell: pwsh
-
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Install Chocolatey
         run: |
           Write-Host "Checking for Chocolatey..."
-          if (-Not (Test-Path "$env:ProgramData\chocolatey")) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force; 
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          if (-Not (Test-Path "C:\ProgramData\Chocolatey")) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          } else {
+            Write-Host "Chocolatey is already installed."
           }
-          Write-Host "Chocolatey is installed."
-        shell: pwsh
 
       - name: Install AnyDesk Silently
         run: |
-          Write-Host "Installing AnyDesk via Chocolatey..."
-          choco install anydesk -y --force | Tee-Object -FilePath "C:\anydesk_choco.log"
+          choco install anydesk -y --force
+          Start-Sleep -Seconds 10
+          Write-Host "AnyDesk Installed Successfully."
 
-          Write-Host "Checking Installation Log..."
-          if (Test-Path "C:\anydesk_choco.log") {
-            Get-Content "C:\anydesk_choco.log"
-          } else {
-            Write-Host "No installation log found."
-          }
-
-          Write-Host "✅ AnyDesk Installed Successfully."
-        shell: pwsh
-
-      - name: Verify AnyDesk Installation
+      - name: Get AnyDesk ID
+        id: anydesk_id
         run: |
-          Write-Host "Checking AnyDesk Process..."
-          Get-Process | Where-Object { $_.ProcessName -eq "AnyDesk" } | Format-Table -AutoSize
-        shell: pwsh
+          $anydesk_id = (Get-Content "C:\ProgramData\AnyDesk\system.conf" | Select-String "ad.id=").ToString().Split('=')[1].Trim()
+          Write-Host "AnyDesk ID: $anydesk_id"
+          echo "ANYDESK_ID=$anydesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Post Check out Repository
-        run: echo "Post setup steps completed."
-        shell: pwsh
+      - name: Set AnyDesk Unattended Access
+        run: |
+          echo mysecurepassword | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
+          Write-Host "Unattended Access Configured."
+
+      - name: Display AnyDesk Connection Info
+        run: |
+          Write-Host "Use this AnyDesk ID to connect: $env:ANYDESK_ID"
+          Write-Host "Password for connection: mysecurepassword"
