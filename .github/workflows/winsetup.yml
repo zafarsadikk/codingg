@@ -21,22 +21,31 @@ jobs:
       - name: Install AnyDesk Silently
         run: |
           choco install anydesk -y --force
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 15
           Write-Host "AnyDesk Installed Successfully."
 
       - name: Get AnyDesk ID
         id: anydesk_id
         run: |
-          $anydesk_id = (Get-Content "C:\ProgramData\AnyDesk\system.conf" | Select-String "ad.id=").ToString().Split('=')[1].Trim()
+          $anydesk_id = &"C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --get-id
           Write-Host "AnyDesk ID: $anydesk_id"
           echo "ANYDESK_ID=$anydesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Set AnyDesk Unattended Access
+      - name: Install RustDesk Silently
         run: |
-          echo mysecurepassword | "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" --set-password
-          Write-Host "Unattended Access Configured."
+          choco install rustdesk -y --force
+          Start-Sleep -Seconds 15
+          Write-Host "RustDesk Installed Successfully."
 
-      - name: Display AnyDesk Connection Info
+      - name: Get RustDesk ID
+        id: rustdesk_id
         run: |
-          Write-Host "Use this AnyDesk ID to connect: $env:ANYDESK_ID"
-          Write-Host "Password for connection: mysecurepassword"
+          $rustdesk_id = Get-Content "$env:APPDATA\RustDesk\id"
+          Write-Host "RustDesk ID: $rustdesk_id"
+          echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Display Connection Info
+        run: |
+          Write-Host "Use the following IDs to connect:"
+          Write-Host "AnyDesk ID: $env:ANYDESK_ID"
+          Write-Host "RustDesk ID: $env:RUSTDESK_ID"
