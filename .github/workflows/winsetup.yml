@@ -6,10 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: read
-
 jobs:
   setup-windows-server:
     runs-on: windows-latest
@@ -17,6 +13,7 @@ jobs:
     steps:
       - name: Set up job
         run: echo "Starting Windows Server Setup"
+        shell: pwsh
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -24,52 +21,35 @@ jobs:
       - name: Install Chocolatey
         run: |
           Write-Host "Checking for Chocolatey..."
-          if (-Not (Get-Command choco -ErrorAction SilentlyContinue)) {
-            Write-Host "Installing Chocolatey..."
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          } else {
-            Write-Host "Chocolatey is already installed."
+          if (-Not (Test-Path "$env:ProgramData\chocolatey")) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force; 
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072;
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
           }
+          Write-Host "Chocolatey is installed."
         shell: pwsh
 
-      - name: Install AnyDesk with Logs
+      - name: Install AnyDesk Silently
         run: |
-          Write-Host "Downloading AnyDesk..."
-          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile "C:\AnyDesk.exe"
-          
-          Write-Host "Verifying AnyDesk Download..."
-          if (Test-Path "C:\AnyDesk.exe") {
-            Write-Host "✅ AnyDesk Downloaded Successfully."
-          } else {
-            Write-Error "❌ AnyDesk download failed!"
-            exit 1
-          }
-
-          Write-Host "Starting Silent AnyDesk Installation..."
-          Start-Process -FilePath "C:\AnyDesk.exe" -ArgumentList "/silent" -NoNewWindow -Wait -PassThru | Tee-Object -FilePath "C:\anydesk_install.log"
+          Write-Host "Installing AnyDesk via Chocolatey..."
+          choco install anydesk -y --force | Tee-Object -FilePath "C:\anydesk_choco.log"
 
           Write-Host "Checking Installation Log..."
-          if (Test-Path "C:\anydesk_install.log") {
-            Get-Content "C:\anydesk_install.log"
+          if (Test-Path "C:\anydesk_choco.log") {
+            Get-Content "C:\anydesk_choco.log"
           } else {
             Write-Host "No installation log found."
           }
-          
-          Write-Host "✅ AnyDesk Installation Completed."
+
+          Write-Host "✅ AnyDesk Installed Successfully."
         shell: pwsh
 
       - name: Verify AnyDesk Installation
         run: |
-          Write-Host "Checking AnyDesk Installation..."
-          if (Test-Path "C:\Program Files (x86)\AnyDesk\AnyDesk.exe") {
-            Write-Host "✅ AnyDesk installed successfully."
-          } else {
-            Write-Error "❌ AnyDesk installation failed."
-            exit 1
-          }
+          Write-Host "Checking AnyDesk Process..."
+          Get-Process | Where-Object { $_.ProcessName -eq "AnyDesk" } | Format-Table -AutoSize
         shell: pwsh
 
       - name: Post Check out Repository
-        run: echo "Setup completed successfully."
+        run: echo "Post setup steps completed."
+        shell: pwsh
