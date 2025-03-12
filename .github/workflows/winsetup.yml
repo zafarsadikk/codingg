@@ -14,21 +14,22 @@ jobs:
       - name: Check Out Repository
         uses: actions/checkout@v4
 
-      # Install AnyDesk and Try Multiple Methods to Find Installation Path
+      # Install AnyDesk & Detect Installation Path
       - name: Install AnyDesk Silently
         id: install_anydesk
         run: |
           choco install anydesk -y --force | Tee-Object -FilePath anydesk_install.log
           
-          # Method 1: Extract path from Chocolatey logs
+          # Method 1: Extract from Chocolatey logs
           $install_path = Get-Content anydesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
           
-          # Method 2: Check standard installation paths
+          # Method 2: Check known installation locations
           if (-not $install_path -or !(Test-Path $install_path)) {
             $paths = @(
               "C:\Program Files (x86)\AnyDesk",
               "C:\Program Files\AnyDesk",
-              "C:\Users\$env:USERNAME\AppData\Local\AnyDesk"
+              "C:\Users\$env:USERNAME\AppData\Local\AnyDesk",
+              "C:\ProgramData\chocolatey\lib\anydesk\tools"
             )
             foreach ($path in $paths) {
               if (Test-Path $path) {
@@ -38,7 +39,16 @@ jobs:
             }
           }
 
-          # Ensure installation path was found
+          # Method 3: Search entire system for AnyDesk.exe
+          if (-not $install_path -or !(Test-Path $install_path)) {
+            Write-Host "Searching entire system for AnyDesk.exe..."
+            $found_paths = Get-ChildItem -Path C:\ -Recurse -Filter "AnyDesk.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DirectoryName
+            if ($found_paths) {
+              $install_path = $found_paths[0]
+            }
+          }
+
+          # Final check
           if ($install_path -and (Test-Path $install_path)) {
             echo "ANYDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
             Write-Host "AnyDesk installed at: $install_path"
@@ -62,16 +72,16 @@ jobs:
             exit 1
           }
 
-      # Install RustDesk and Try Multiple Methods to Find Installation Path
+      # Install RustDesk & Detect Installation Path
       - name: Install RustDesk Silently
         id: install_rustdesk
         run: |
           choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install.log
           
-          # Method 1: Extract path from Chocolatey logs
+          # Method 1: Extract from Chocolatey logs
           $install_path = Get-Content rustdesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
           
-          # Method 2: Check standard installation paths
+          # Method 2: Check known installation locations
           if (-not $install_path -or !(Test-Path $install_path)) {
             $paths = @(
               "C:\Program Files (x86)\RustDesk",
@@ -86,7 +96,16 @@ jobs:
             }
           }
 
-          # Ensure installation path was found
+          # Method 3: Search entire system for RustDesk.exe
+          if (-not $install_path -or !(Test-Path $install_path)) {
+            Write-Host "Searching entire system for RustDesk.exe..."
+            $found_paths = Get-ChildItem -Path C:\ -Recurse -Filter "RustDesk.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DirectoryName
+            if ($found_paths) {
+              $install_path = $found_paths[0]
+            }
+          }
+
+          # Final check
           if ($install_path -and (Test-Path $install_path)) {
             echo "RUSTDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
             Write-Host "RustDesk installed at: $install_path"
