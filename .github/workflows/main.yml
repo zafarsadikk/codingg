@@ -1,4 +1,4 @@
-name: Windows Server Setup
+name: Setup Windows Server on GitHub Runner
 
 on:
   push:
@@ -8,25 +8,33 @@ on:
 
 jobs:
   setup-windows-server:
-    runs-on: windows-latest
+    runs-on: windows-latest  # Use GitHub-hosted Windows runner
     steps:
-      - name: Check out repository
+      - name: Check out Repository
         uses: actions/checkout@v4
-
-      - name: Install Python 3.10
-        run: |
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe" -OutFile "python-installer.exe"
-          Start-Process -FilePath "python-installer.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -NoNewWindow -Wait
-          Remove-Item -Force "python-installer.exe"
 
       - name: Verify Python Installation
         run: python --version
 
-      - name: Install RustDesk
+      - name: Install RustDesk from Repo
         run: |
-          Invoke-WebRequest -Uri "https://github.com/rustdesk/rustdesk/releases/latest/download/RustDesk-Windows.zip" -OutFile "RustDesk.zip"
-          Expand-Archive -Path "RustDesk.zip" -DestinationPath "RustDesk"
-          Remove-Item -Force "RustDesk.zip"
+          $installerPath = "${{ github.workspace }}\rustdesk.exe"
+
+          if (Test-Path $installerPath) {
+              Write-Host "Found RustDesk installer, proceeding with installation..."
+              Start-Process -FilePath $installerPath -ArgumentList "/verysilent /norestart" -NoNewWindow -Wait
+          } else {
+              Write-Host "❌ RustDesk installer not found!"
+              exit 1
+          }
+        shell: powershell
 
       - name: Verify RustDesk Installation
-        run: Get-ChildItem -Path "RustDesk"
+        run: |
+          if (Test-Path "C:\Program Files\RustDesk\RustDesk.exe") {
+              Write-Host "✅ RustDesk installed successfully!"
+          } else {
+              Write-Host "❌ RustDesk installation failed."
+              exit 1
+          }
+        shell: powershell
