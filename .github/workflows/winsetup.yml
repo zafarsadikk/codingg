@@ -1,4 +1,4 @@
-name: Setup Windows Self-Hosted Runner
+name: Setup Windows Server on GitHub Runner
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   setup-windows-server:
-    runs-on: self-hosted
+    runs-on: windows-latest  # ⬅️ Use GitHub-hosted Windows runner
     steps:
       - name: Check out Repository
         uses: actions/checkout@v4
@@ -21,14 +21,11 @@ jobs:
           $rustdeskUrl = "https://github.com/rustdesk/rustdesk/releases/latest/download/rustdesk-1.2.3-x64.exe"
           $installerPath = "$env:TEMP\RustDesk-Installer.exe"
 
-          # Download RustDesk
           Write-Host "Downloading RustDesk..."
           Invoke-WebRequest -Uri $rustdeskUrl -OutFile $installerPath
 
-          # Install RustDesk silently
           Write-Host "Installing RustDesk..."
           Start-Process -FilePath $installerPath -ArgumentList "/verysilent /norestart" -NoNewWindow -Wait
-
         shell: powershell
 
       - name: Verify RustDesk Installation
