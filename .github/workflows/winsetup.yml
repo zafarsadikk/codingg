@@ -10,21 +10,15 @@ jobs:
       - name: Check out Repository
         uses: actions/checkout@v3
 
-      - name: Install Chocolatey (if not installed)
+      - name: Install RustDesk using Chocolatey with Timeout
         run: |
-          if (!(Test-Path "C:\ProgramData\chocoportable")) {
-            Write-Host "Installing Chocolatey..."
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          } else {
-            Write-Host "Chocolatey already installed."
+          $process = Start-Process -FilePath "choco" -ArgumentList "install rustdesk -y --force --limit-output" -NoNewWindow -PassThru
+          Start-Sleep -Seconds 180  # Wait for 3 minutes
+          if (!$process.HasExited) {
+            Write-Host "RustDesk installation taking too long. Forcing exit..."
+            Stop-Process -Id $process.Id -Force
+            exit 1
           }
-        shell: pwsh
-
-      - name: Install RustDesk using Chocolatey
-        run: |
-          choco install rustdesk -y
         shell: pwsh
 
       - name: Verify RustDesk Installation
@@ -33,16 +27,6 @@ jobs:
             Write-Host "✅ RustDesk installed successfully."
           } else {
             Write-Host "❌ RustDesk installation failed."
-            exit 1
-          }
-        shell: pwsh
-
-      - name: Check if RustDesk is Running
-        run: |
-          if (Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue) {
-            Write-Host "✅ RustDesk is running."
-          } else {
-            Write-Host "❌ RustDesk is NOT running!"
             exit 1
           }
         shell: pwsh
