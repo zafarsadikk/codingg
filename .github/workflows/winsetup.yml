@@ -34,13 +34,24 @@ jobs:
           }
         shell: pwsh
 
-      - name: Install AnyDesk
+      - name: Install AnyDesk with Logs
         run: |
           Write-Host "Downloading AnyDesk..."
           Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile "C:\AnyDesk.exe"
           
-          Write-Host "Installing AnyDesk..."
-          Start-Process -FilePath "C:\AnyDesk.exe" -ArgumentList "/S" -NoNewWindow -Wait
+          Write-Host "Verifying AnyDesk Download..."
+          if (Test-Path "C:\AnyDesk.exe") {
+            Write-Host "AnyDesk Downloaded Successfully."
+          } else {
+            Write-Error "AnyDesk download failed!"
+            exit 1
+          }
+
+          Write-Host "Starting AnyDesk Installation..."
+          Start-Process -FilePath "C:\AnyDesk.exe" -ArgumentList "/S" -NoNewWindow -Wait -PassThru | Tee-Object -FilePath "C:\anydesk_install.log"
+
+          Write-Host "Checking Installation Log..."
+          Get-Content "C:\anydesk_install.log"
           
           Write-Host "AnyDesk Installation Completed."
         shell: pwsh
@@ -49,9 +60,10 @@ jobs:
         run: |
           Write-Host "Checking AnyDesk Installation..."
           if (Test-Path "C:\Program Files (x86)\AnyDesk\AnyDesk.exe") {
-            Write-Host "AnyDesk installed successfully."
+            Write-Host "✅ AnyDesk installed successfully."
           } else {
-            Write-Error "AnyDesk installation failed."
+            Write-Error "❌ AnyDesk installation failed."
+            exit 1
           }
         shell: pwsh
 
