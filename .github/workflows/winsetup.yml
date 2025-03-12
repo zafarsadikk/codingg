@@ -14,20 +14,36 @@ jobs:
       - name: Check Out Repository
         uses: actions/checkout@v4
 
-      # Install AnyDesk and Capture Installation Path
+      # Install AnyDesk and Try Multiple Methods to Find Installation Path
       - name: Install AnyDesk Silently
         id: install_anydesk
         run: |
           choco install anydesk -y --force | Tee-Object -FilePath anydesk_install.log
           
-          # Extract installation path from Chocolatey logs
+          # Method 1: Extract path from Chocolatey logs
           $install_path = Get-Content anydesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
           
-          if ($install_path) {
+          # Method 2: Check standard installation paths
+          if (-not $install_path -or !(Test-Path $install_path)) {
+            $paths = @(
+              "C:\Program Files (x86)\AnyDesk",
+              "C:\Program Files\AnyDesk",
+              "C:\Users\$env:USERNAME\AppData\Local\AnyDesk"
+            )
+            foreach ($path in $paths) {
+              if (Test-Path $path) {
+                $install_path = $path
+                break
+              }
+            }
+          }
+
+          # Ensure installation path was found
+          if ($install_path -and (Test-Path $install_path)) {
             echo "ANYDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
             Write-Host "AnyDesk installed at: $install_path"
           } else {
-            Write-Host "Failed to detect AnyDesk installation path!"
+            Write-Host "Failed to detect AnyDesk installation path using all methods!"
             exit 1
           }
 
@@ -35,31 +51,47 @@ jobs:
       - name: Get AnyDesk ID
         id: anydesk_id
         run: |
-          $anydesk_path = "${{ env.ANYDESK_PATH }}\AnyDesk.exe"
+          $anydesk_exe = "${{ env.ANYDESK_PATH }}\AnyDesk.exe"
           
-          if (Test-Path $anydesk_path) {
-            $anydesk_id = & $anydesk_path --get-id
+          if (Test-Path $anydesk_exe) {
+            $anydesk_id = & $anydesk_exe --get-id
             Write-Host "AnyDesk ID: $anydesk_id"
             echo "ANYDESK_ID=$anydesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
-            Write-Host "AnyDesk executable not found at $anydesk_path!"
+            Write-Host "AnyDesk executable not found at $anydesk_exe!"
             exit 1
           }
 
-      # Install RustDesk and Capture Installation Path
+      # Install RustDesk and Try Multiple Methods to Find Installation Path
       - name: Install RustDesk Silently
         id: install_rustdesk
         run: |
           choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install.log
           
-          # Extract installation path from Chocolatey logs
+          # Method 1: Extract path from Chocolatey logs
           $install_path = Get-Content rustdesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
           
-          if ($install_path) {
+          # Method 2: Check standard installation paths
+          if (-not $install_path -or !(Test-Path $install_path)) {
+            $paths = @(
+              "C:\Program Files (x86)\RustDesk",
+              "C:\Program Files\RustDesk",
+              "C:\Users\$env:USERNAME\AppData\Local\RustDesk"
+            )
+            foreach ($path in $paths) {
+              if (Test-Path $path) {
+                $install_path = $path
+                break
+              }
+            }
+          }
+
+          # Ensure installation path was found
+          if ($install_path -and (Test-Path $install_path)) {
             echo "RUSTDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
             Write-Host "RustDesk installed at: $install_path"
           } else {
-            Write-Host "Failed to detect RustDesk installation path!"
+            Write-Host "Failed to detect RustDesk installation path using all methods!"
             exit 1
           }
 
@@ -67,14 +99,14 @@ jobs:
       - name: Get RustDesk ID
         id: rustdesk_id
         run: |
-          $rustdesk_path = "${{ env.RUSTDESK_PATH }}\rustdesk.exe"
+          $rustdesk_exe = "${{ env.RUSTDESK_PATH }}\rustdesk.exe"
           
-          if (Test-Path $rustdesk_path) {
-            $rustdesk_id = & $rustdesk_path --get-id
+          if (Test-Path $rustdesk_exe) {
+            $rustdesk_id = & $rustdesk_exe --get-id
             Write-Host "RustDesk ID: $rustdesk_id"
             echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
-            Write-Host "RustDesk executable not found at $rustdesk_path!"
+            Write-Host "RustDesk executable not found at $rustdesk_exe!"
             exit 1
           }
 
