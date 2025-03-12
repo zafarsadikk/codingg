@@ -1,31 +1,41 @@
 name: setup-windows-server
 
-on: [push, pull_request]
+on:  
+  push:
+    branches:
+      - main
 
 jobs:
   setup-windows-server:
     runs-on: windows-latest
 
     steps:
-      - name: Check out Repository
-        uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Download RustDesk Installer
+      - name: Install Chocolatey
         run: |
-          Invoke-WebRequest -Uri "https://github.com/rustdesk/rustdesk/releases/download/1.2.6/rustdesk-1.2.6-x86_64.exe" -OutFile "C:\rustdesk.exe"
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
         shell: pwsh
 
-      - name: Install RustDesk Silently
+      - name: Install AnyDesk
         run: |
-          Start-Process -FilePath "C:\rustdesk.exe" -ArgumentList "/S" -NoNewWindow -Wait
+          Invoke-WebRequest -Uri "https://download.anydesk.com/AnyDesk.exe" -OutFile "C:\AnyDesk.exe"
+          Start-Process -FilePath "C:\AnyDesk.exe" -ArgumentList "/S" -NoNewWindow -Wait
         shell: pwsh
 
-      - name: Verify RustDesk Installation
+      - name: Verify AnyDesk Installation
         run: |
-          if (Test-Path "C:\Program Files\RustDesk\RustDesk.exe") {
-            Write-Host "✅ RustDesk installed successfully."
+          if (Get-Process -Name AnyDesk -ErrorAction SilentlyContinue) {
+            Write-Output "AnyDesk is installed and running."
           } else {
-            Write-Host "❌ RustDesk installation failed."
-            exit 1
+            Write-Error "AnyDesk installation failed or process not found."
           }
+        shell: pwsh
+
+      - name: Post Check out Repository
+        run: |
+          git --version
         shell: pwsh
