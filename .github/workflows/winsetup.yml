@@ -41,19 +41,23 @@ jobs:
           
           Write-Host "Verifying AnyDesk Download..."
           if (Test-Path "C:\AnyDesk.exe") {
-            Write-Host "AnyDesk Downloaded Successfully."
+            Write-Host "✅ AnyDesk Downloaded Successfully."
           } else {
-            Write-Error "AnyDesk download failed!"
+            Write-Error "❌ AnyDesk download failed!"
             exit 1
           }
 
-          Write-Host "Starting AnyDesk Installation..."
-          Start-Process -FilePath "C:\AnyDesk.exe" -ArgumentList "/S" -NoNewWindow -Wait -PassThru | Tee-Object -FilePath "C:\anydesk_install.log"
+          Write-Host "Starting Silent AnyDesk Installation..."
+          Start-Process -FilePath "C:\AnyDesk.exe" -ArgumentList "/silent" -NoNewWindow -Wait -PassThru | Tee-Object -FilePath "C:\anydesk_install.log"
 
           Write-Host "Checking Installation Log..."
-          Get-Content "C:\anydesk_install.log"
+          if (Test-Path "C:\anydesk_install.log") {
+            Get-Content "C:\anydesk_install.log"
+          } else {
+            Write-Host "No installation log found."
+          }
           
-          Write-Host "AnyDesk Installation Completed."
+          Write-Host "✅ AnyDesk Installation Completed."
         shell: pwsh
 
       - name: Verify AnyDesk Installation
