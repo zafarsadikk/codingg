@@ -1,63 +1,87 @@
-name: setup-windows-server
+name: Setup Windows Server
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   setup-windows-server:
     runs-on: windows-latest
 
     steps:
-      - name: Install Chocolatey
+      - name: Check Out Repository
+        uses: actions/checkout@v4
+
+      # Install AnyDesk and Capture Installation Path
+      - name: Install AnyDesk Silently
+        id: install_anydesk
         run: |
-          Write-Host "Checking for Chocolatey..."
-          if (-Not (Test-Path "C:\ProgramData\Chocolatey")) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          choco install anydesk -y --force | Tee-Object -FilePath anydesk_install.log
+          
+          # Extract installation path from Chocolatey logs
+          $install_path = Get-Content anydesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
+          
+          if ($install_path) {
+            echo "ANYDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "AnyDesk installed at: $install_path"
           } else {
-            Write-Host "Chocolatey is already installed."
+            Write-Host "Failed to detect AnyDesk installation path!"
+            exit 1
           }
 
-      - name: Install AnyDesk Silently
-        run: |
-          choco install anydesk -y --force
-          Start-Sleep -Seconds 15
-          Write-Host "AnyDesk Installed Successfully."
-
+      # Get AnyDesk ID
       - name: Get AnyDesk ID
         id: anydesk_id
         run: |
-          $anydesk_path = Get-ChildItem -Path "C:\Program Files\", "C:\Program Files (x86)\" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "AnyDesk.exe" } | Select-Object -ExpandProperty FullName -First 1
-          if ($anydesk_path) {
+          $anydesk_path = "${{ env.ANYDESK_PATH }}\AnyDesk.exe"
+          
+          if (Test-Path $anydesk_path) {
             $anydesk_id = & $anydesk_path --get-id
             Write-Host "AnyDesk ID: $anydesk_id"
             echo "ANYDESK_ID=$anydesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
-            Write-Host "AnyDesk executable not found!"
+            Write-Host "AnyDesk executable not found at $anydesk_path!"
             exit 1
           }
 
+      # Install RustDesk and Capture Installation Path
       - name: Install RustDesk Silently
+        id: install_rustdesk
         run: |
-          choco install rustdesk -y --force
-          Start-Sleep -Seconds 15
-          Write-Host "RustDesk Installed Successfully."
+          choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install.log
+          
+          # Extract installation path from Chocolatey logs
+          $install_path = Get-Content rustdesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
+          
+          if ($install_path) {
+            echo "RUSTDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
+            Write-Host "RustDesk installed at: $install_path"
+          } else {
+            Write-Host "Failed to detect RustDesk installation path!"
+            exit 1
+          }
 
+      # Get RustDesk ID
       - name: Get RustDesk ID
         id: rustdesk_id
         run: |
-          $rustdesk_id_file = "$env:APPDATA\RustDesk\id"
-          if (Test-Path $rustdesk_id_file) {
-            $rustdesk_id = Get-Content $rustdesk_id_file
+          $rustdesk_path = "${{ env.RUSTDESK_PATH }}\rustdesk.exe"
+          
+          if (Test-Path $rustdesk_path) {
+            $rustdesk_id = & $rustdesk_path --get-id
             Write-Host "RustDesk ID: $rustdesk_id"
             echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
           } else {
-            Write-Host "RustDesk ID file not found!"
+            Write-Host "RustDesk executable not found at $rustdesk_path!"
             exit 1
           }
 
+      # Display Connection Info
       - name: Display Connection Info
         run: |
-          Write-Host "Use the following IDs to connect:"
-          Write-Host "AnyDesk ID: $env:ANYDESK_ID"
-          Write-Host "RustDesk ID: $env:RUSTDESK_ID"
+          Write-Host "------------------------------------------------"
+          Write-Host "AnyDesk ID: ${{ env.ANYDESK_ID }}"
+          Write-Host "RustDesk ID: ${{ env.RUSTDESK_ID }}"
+          Write-Host "------------------------------------------------"
