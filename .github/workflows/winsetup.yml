@@ -10,20 +10,19 @@ jobs:
       - name: Check out Repository
         uses: actions/checkout@v3
 
-      - name: Install RustDesk using Chocolatey with Timeout
+      - name: Download RustDesk Installer
         run: |
-          $process = Start-Process -FilePath "choco" -ArgumentList "install rustdesk -y --force --limit-output" -NoNewWindow -PassThru
-          Start-Sleep -Seconds 180  # Wait for 3 minutes
-          if (!$process.HasExited) {
-            Write-Host "RustDesk installation taking too long. Forcing exit..."
-            Stop-Process -Id $process.Id -Force
-            exit 1
-          }
+          Invoke-WebRequest -Uri "https://github.com/rustdesk/rustdesk/releases/download/1.2.6/rustdesk-1.2.6-x86_64.exe" -OutFile "C:\rustdesk.exe"
+        shell: pwsh
+
+      - name: Install RustDesk Silently
+        run: |
+          Start-Process -FilePath "C:\rustdesk.exe" -ArgumentList "/S" -NoNewWindow -Wait
         shell: pwsh
 
       - name: Verify RustDesk Installation
         run: |
-          if (Get-Command "rustdesk" -ErrorAction SilentlyContinue) {
+          if (Test-Path "C:\Program Files\RustDesk\RustDesk.exe") {
             Write-Host "✅ RustDesk installed successfully."
           } else {
             Write-Host "❌ RustDesk installation failed."
