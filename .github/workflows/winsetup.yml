@@ -14,97 +14,134 @@ jobs:
       - name: Check Out Repository
         uses: actions/checkout@v4
 
-      # Install AnyDesk & Detect Installation Path
-      - name: Install RustDesk Silently
+      - name: Setup Windows Environment
+        run: |
+          # Update system and prepare environment
+          Write-Host "Setting up Windows environment..."
+          
+          # Enable long paths if needed
+          New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+          
+          # Configure Windows settings
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          
+          # Install Chocolatey if not already installed
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+            # Refresh environment variables
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          }
+          
+          Write-Host "Windows environment setup completed successfully"
+
+      - name: Install Python 3.10
+        run: |
+          Write-Host "Installing Python 3.10..."
+          
+          # Install Python 3.10 using Chocolatey
+          choco install python3 --version=3.10.11 -y --no-progress
+          
+          # Refresh environment variables
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          
+          # Verify Python installation
+          $pythonVersion = python --version
+          Write-Host "Installed: $pythonVersion"
+          
+          # Upgrade pip
+          python -m pip install --upgrade pip
+          
+          # Verify pip installation
+          $pipVersion = pip --version
+          Write-Host "Pip version: $pipVersion"
+          
+          # Check if Python is in PATH
+          if (Get-Command python -ErrorAction SilentlyContinue) {
+            Write-Host "Python is successfully installed and available in PATH"
+          } else {
+            Write-Error "Python installation failed or not available in PATH"
+            exit 1
+          }
+
+      - name: Install RustDesk
         id: install_rustdesk
         run: |
-          # Execute silent installation
-          Start-Process -Wait -FilePath "./rustdesk-1.3.8-x86_64.exe" -ArgumentList "--silent"
+          # Execute silent installation using the executable in the repository
+          Write-Host "Installing RustDesk..." -ForegroundColor Cyan
           
-          # Verify installation
-          $install_path = "C:\Program Files\RustDesk\rustdesk.exe"
-          if (Test-Path $install_path) {
-            Write-Host "RustDesk installed successfully at $install_path"
+          # Check if the RustDesk installer exists
+          if (Test-Path "./rustdesk-1.3.8-x86_64.exe") {
+            Write-Host "Found RustDesk installer in repository" -ForegroundColor Green
+            
+            # Stop any existing RustDesk processes
+            Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            
+            # Execute silent installation with elevated privileges
+            Write-Host "Running installer with --silent flag"
+            Start-Process -Wait -FilePath "./rustdesk-1.3.8-x86_64.exe" -ArgumentList "--silent" -Verb RunAs -ErrorAction SilentlyContinue
+            
+            # Give the installation a moment to complete
+            Start-Sleep -Seconds 5
+            
+            # Verify installation
+            $install_path = "C:\Program Files\RustDesk\rustdesk.exe"
+            if (Test-Path $install_path) {
+              Write-Host "RustDesk installed successfully at $install_path" -ForegroundColor Green
+            } else {
+              Write-Host "RustDesk not found at expected path, checking alternative locations..." -ForegroundColor Yellow
+            }
           } else {
-            Write-Error "RustDesk installation failed"
-            exit 1
+            # Fallback to Chocolatey if the installer is not found
+            Write-Host "RustDesk installer not found in repository, installing via Chocolatey..." -ForegroundColor Yellow
+            choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install.log
+            Start-Sleep -Seconds 5
           }
           
-          # Add firewall rule if needed
-          netsh advfirewall firewall add rule name="RustDesk" dir=in action=allow program="$install_path" enable=yes
-
-          # Method 3: Search entire system for AnyDesk.exe
-          if (-not $install_path -or !(Test-Path $install_path)) {
-            Write-Host "Searching entire system for AnyDesk.exe..."
-            $found_paths = Get-ChildItem -Path C:\ -Recurse -Filter "AnyDesk.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DirectoryName
+          # Check known installation locations
+          $paths = @(
+            "C:\Program Files\RustDesk",
+            "C:\Program Files (x86)\RustDesk",
+            "C:\Users\$env:USERNAME\AppData\Local\Programs\RustDesk",
+            "C:\Users\$env:USERNAME\AppData\Local\RustDesk",
+            "C:\Users\runneradmin\AppData\Local\Programs\RustDesk"
+          )
+          
+          $install_path = $null
+          foreach ($path in $paths) {
+            Write-Host "Checking for RustDesk in $path"
+            if (Test-Path "$path\rustdesk.exe") {
+              $install_path = "$path\rustdesk.exe"
+              Write-Host "Found RustDesk at: $install_path" -ForegroundColor Green
+              break
+            }
+          }
+          
+          # Search entire system for RustDesk.exe if not found in known locations
+          if (-not $install_path) {
+            Write-Host "RustDesk not found in known locations, searching system..." -ForegroundColor Yellow
+            $found_paths = Get-ChildItem -Path "C:\Program Files", "C:\Program Files (x86)", "C:\Users" -Recurse -Filter "rustdesk.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
             if ($found_paths) {
               $install_path = $found_paths[0]
+              Write-Host "Found RustDesk at: $install_path" -ForegroundColor Green
             }
           }
-
-          # Final check
-          if ($install_path -and (Test-Path $install_path)) {
-            echo "ANYDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
-            Write-Host "AnyDesk installed at: $install_path"
-          } else {
-            Write-Host "Failed to detect AnyDesk installation path using all methods!"
-            exit 1
-          }
-
-      # Get AnyDesk ID
-      - name: Get AnyDesk ID
-        id: anydesk_id
-        run: |
-          $anydesk_exe = "${{ env.ANYDESK_PATH }}\AnyDesk.exe"
           
-          if (Test-Path $anydesk_exe) {
-            $anydesk_id = & $anydesk_exe --get-id
-            Write-Host "AnyDesk ID: $anydesk_id"
-            echo "ANYDESK_ID=$anydesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
-          } else {
-            Write-Host "AnyDesk executable not found at $anydesk_exe!"
-            exit 1
-          }
-
-      # Install RustDesk & Detect Installation Path
-      - name: Install RustDesk Silently
-        id: install_rustdesk
-        run: |
-          choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install.log
-          
-          # Method 1: Extract from Chocolatey logs
-          $install_path = Get-Content rustdesk_install.log | Select-String -Pattern "Deploying to '(.+?)'" | ForEach-Object { $_.Matches.Groups[1].Value }
-          
-          # Method 2: Check known installation locations
-          if (-not $install_path -or !(Test-Path $install_path)) {
-            $paths = @(
-              "C:\Program Files (x86)\RustDesk",
-              "C:\Program Files\RustDesk",
-              "C:\Users\$env:USERNAME\AppData\Local\RustDesk"
-            )
-            foreach ($path in $paths) {
-              if (Test-Path $path) {
-                $install_path = $path
-                break
-              }
-            }
-          }
-
-          # Method 3: Search entire system for RustDesk.exe
-          if (-not $install_path -or !(Test-Path $install_path)) {
-            Write-Host "Searching entire system for RustDesk.exe..."
-            $found_paths = Get-ChildItem -Path C:\ -Recurse -Filter "RustDesk.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DirectoryName
-            if ($found_paths) {
-              $install_path = $found_paths[0]
-            }
-          }
-
-          # Final check
+          # Final check and start service
           if ($install_path -and (Test-Path $install_path)) {
             echo "RUSTDESK_PATH=$install_path" | Out-File -FilePath $env:GITHUB_ENV -Append
-            Write-Host "RustDesk installed at: $install_path"
+            Write-Host "RustDesk installed at: $install_path" -ForegroundColor Green
+            
+            # Add firewall rule
+            Write-Host "Adding firewall rule for RustDesk"
+            netsh advfirewall firewall add rule name="RustDesk" dir=in action=allow program="$install_path" enable=yes
+            
+            # Start RustDesk service
+            Write-Host "Starting RustDesk service"
+            Start-Process -FilePath $install_path -WindowStyle Hidden
+            Start-Sleep -Seconds 10  # Give RustDesk time to initialize
           } else {
-            Write-Host "Failed to detect RustDesk installation path using all methods!"
+            Write-Host "Failed to detect RustDesk installation path!" -ForegroundColor Red
             exit 1
           }
 
@@ -112,24 +149,116 @@ jobs:
       - name: Get RustDesk ID
         id: rustdesk_id
         run: |
-          $rustdesk_exe = "${{ env.RUSTDESK_PATH }}\rustdesk.exe"
+          $rustdesk_exe = "${{ env.RUSTDESK_PATH }}"
           
           if (Test-Path $rustdesk_exe) {
-            $rustdesk_id = & $rustdesk_exe --get-id
-            Write-Host "RustDesk ID: $rustdesk_id"
-            echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
+            # Try to get the RustDesk ID
+            try {
+              # Ensure RustDesk service is running
+              $rustdesk_process = Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue
+              if (-not $rustdesk_process) {
+                Write-Host "RustDesk service not running, starting it now..." -ForegroundColor Yellow
+                Start-Process -FilePath $rustdesk_exe -WindowStyle Hidden
+                Start-Sleep -Seconds 15  # Give RustDesk more time to initialize
+              }
+              
+              # Try multiple times to get the ID
+              $max_attempts = 3
+              $attempt = 1
+              $rustdesk_id = $null
+              
+              while ($attempt -le $max_attempts -and -not $rustdesk_id) {
+                Write-Host "Attempt $attempt of $max_attempts to get RustDesk ID..."
+                $rustdesk_id = & $rustdesk_exe --get-id
+                
+                if ($rustdesk_id -and $rustdesk_id.Trim() -ne "") {
+                  Write-Host "RustDesk ID: $rustdesk_id" -ForegroundColor Green
+                  echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  break
+                } else {
+                  Write-Host "Failed to get RustDesk ID on attempt $attempt" -ForegroundColor Yellow
+                  Start-Sleep -Seconds 5
+                  $attempt++
+                }
+              }
+              
+              if (-not $rustdesk_id -or $rustdesk_id.Trim() -eq "") {
+                Write-Host "Failed to get RustDesk ID after $max_attempts attempts" -ForegroundColor Red
+                exit 1
+              }
+            } catch {
+              Write-Host "Error getting RustDesk ID: $_" -ForegroundColor Red
+              exit 1
+            }
           } else {
-            Write-Host "RustDesk executable not found at $rustdesk_exe!"
+            Write-Host "RustDesk executable not found at $rustdesk_exe!" -ForegroundColor Red
             exit 1
           }
+
+      # Install GitHub CLI
+      - name: Install GitHub CLI
+        run: |
+          Write-Host "Installing GitHub CLI..." -ForegroundColor Cyan
+          
+          # Install GitHub CLI using Chocolatey
+          choco install gh -y --no-progress
+          
+          # Refresh environment variables
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          
+          # Verify GitHub CLI installation
+          $ghVersion = gh --version
+          Write-Host "Installed: $ghVersion" -ForegroundColor Green
+          
+          # Install Git if not already installed (required for GitHub CLI)
+          if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing Git (required for GitHub CLI)..." -ForegroundColor Yellow
+            choco install git -y --no-progress
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          }
+          
+          # Verify Git installation
+          $gitVersion = git --version
+          Write-Host "Git version: $gitVersion" -ForegroundColor Green
+          
+          # Check if GitHub CLI is in PATH
+          if (Get-Command gh -ErrorAction SilentlyContinue) {
+            Write-Host "GitHub CLI is successfully installed and available in PATH" -ForegroundColor Green
+          } else {
+            Write-Error "GitHub CLI installation failed or not available in PATH"
+            exit 1
+          }
+          
+          Write-Host "GitHub CLI installation completed successfully" -ForegroundColor Green
 
       # Validate and Display Connection Info
       - name: Show RustDesk Connection ID
         run: |
           if (-not $env:RUSTDESK_ID) {
-            Write-Error "Failed to retrieve RustDesk ID"
+            Write-Error "Failed to retrieve RustDesk ID" -ForegroundColor Red
             exit 1
           }
-          Write-Host "SUCCESS! Use this ID to connect: $env:RUSTDESK_ID"
-          Write-Host "------------------------------------------------"
-          Write-Host "RUSTDESK_ID=$env:RUSTDESK_ID" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          
+          # Verify RustDesk is still running
+          $rustdesk_process = Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue
+          if (-not $rustdesk_process) {
+            Write-Host "Warning: RustDesk process not detected, attempting to restart..." -ForegroundColor Yellow
+            Start-Process -FilePath "${{ env.RUSTDESK_PATH }}" -WindowStyle Hidden
+            Start-Sleep -Seconds 5
+          }
+          
+          # Display connection information with formatting
+          Write-Host "================================================" -ForegroundColor Cyan
+          Write-Host "       RUSTDESK CONNECTION INFORMATION          " -ForegroundColor Cyan
+          Write-Host "================================================" -ForegroundColor Cyan
+          Write-Host "✅ SUCCESS! RustDesk is ready for connection" -ForegroundColor Green
+          Write-Host "📋 Connection ID: $env:RUSTDESK_ID" -ForegroundColor Green
+          Write-Host "🔧 System Information:" -ForegroundColor Cyan
+          Write-Host "   - Python version: $(python --version 2>&1)" 
+          Write-Host "   - RustDesk path: ${{ env.RUSTDESK_PATH }}" 
+          Write-Host "   - RustDesk process running: $(if ($rustdesk_process) { 'Yes' } else { 'Restarted' })" 
+          Write-Host "   - OS: $((Get-CimInstance -ClassName Win32_OperatingSystem).Caption)" 
+          Write-Host "================================================" -ForegroundColor Cyan
+          
+          # Save ID to outputs for potential use in other workflow steps
+          echo "RUSTDESK_ID=$env:RUSTDESK_ID" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
