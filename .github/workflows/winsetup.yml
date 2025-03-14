@@ -77,12 +77,37 @@ jobs:
             # Stop any existing RustDesk processes
             Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             
-            # Execute silent installation with elevated privileges
+            # Execute silent installation with timeout to prevent hanging
             Write-Host "Running installer with --silent flag"
-            Start-Process -Wait -FilePath "./rustdesk-1.3.8-x86_64.exe" -ArgumentList "--silent" -Verb RunAs -ErrorAction SilentlyContinue
+            try {
+              $process = Start-Process -FilePath "./rustdesk-1.3.8-x86_64.exe" -ArgumentList "--silent" -PassThru -ErrorAction Stop
+              
+              # Wait for process with timeout (5 minutes max - increased from 3 minutes)
+              $timeoutSeconds = 300
+              Write-Host "Waiting up to $timeoutSeconds seconds for installation to complete..."
+              
+              if (-not $process.WaitForExit($timeoutSeconds * 1000)) {
+                Write-Host "Installation process timed out after $timeoutSeconds seconds" -ForegroundColor Yellow
+                try {
+                  $process | Stop-Process -Force -ErrorAction SilentlyContinue
+                  Write-Host "Terminated hanging installation process" -ForegroundColor Yellow
+                  # Continue with installation verification even after timeout
+                  Write-Host "Continuing with installation verification despite timeout..." -ForegroundColor Yellow
+                } catch {
+                  Write-Host "Failed to terminate process: $_" -ForegroundColor Red
+                }
+              } else {
+                Write-Host "Installation process completed with exit code: $($process.ExitCode)" -ForegroundColor Cyan
+              }
+            } catch {
+              Write-Host "Error starting RustDesk installer: $_" -ForegroundColor Red
+              # Try alternative installation method if direct installation fails
+              Write-Host "Attempting alternative installation via Chocolatey..." -ForegroundColor Yellow
+              choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install.log
+            }
             
             # Give the installation a moment to complete
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds 10  # Increased from 5 seconds
             
             # Verify installation
             $install_path = "C:\Program Files\RustDesk\rustdesk.exe"
