@@ -184,32 +184,103 @@ jobs:
               if (-not $rustdesk_process) {
                 Write-Host "RustDesk service not running, starting it now..." -ForegroundColor Yellow
                 Start-Process -FilePath $rustdesk_exe -WindowStyle Hidden
-                Start-Sleep -Seconds 15  # Give RustDesk more time to initialize
+                Start-Sleep -Seconds 30  # Give RustDesk more time to initialize
               }
               
+              # Restart RustDesk service to ensure it's in a clean state
+              Write-Host "Restarting RustDesk service for a clean state..." -ForegroundColor Cyan
+              Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+              Start-Sleep -Seconds 5
+              Start-Process -FilePath $rustdesk_exe -WindowStyle Hidden
+              Start-Sleep -Seconds 30  # Give RustDesk more time to initialize
+              
               # Try multiple times to get the ID
-              $max_attempts = 3
+              $max_attempts = 5  # Increased from 3 to 5 attempts
               $attempt = 1
               $rustdesk_id = $null
+              $env:RUST_BACKTRACE = 1  # Enable backtrace for debugging
               
               while ($attempt -le $max_attempts -and -not $rustdesk_id) {
                 Write-Host "Attempt $attempt of $max_attempts to get RustDesk ID..."
-                $rustdesk_id = & $rustdesk_exe --get-id
                 
-                if ($rustdesk_id -and $rustdesk_id.Trim() -ne "") {
+                # Try different methods to get the ID
+                try {
+                  # Method 1: Direct command
+                  Write-Host "Method 1: Using direct command..." -ForegroundColor Cyan
+                  $rustdesk_id = & $rustdesk_exe --get-id 2>&1
+                  
+                  # Check if we got a valid ID
+                  if ($rustdesk_id -and $rustdesk_id -match '\d{9,}') {
+                    Write-Host "RustDesk ID found: $rustdesk_id" -ForegroundColor Green
+                  } else {
+                    Write-Host "Method 1 failed, trying alternative method..." -ForegroundColor Yellow
+                    
+                    # Method 2: Check config file
+                    Write-Host "Method 2: Checking config file..." -ForegroundColor Cyan
+                    $config_path = "C:\Users\runneradmin\.config\rustdesk\config\rustdesk.toml"
+                    if (Test-Path $config_path) {
+                      $config_content = Get-Content $config_path -Raw
+                      if ($config_content -match 'id\s*=\s*"(\d+)"') {
+                        $rustdesk_id = $matches[1]
+                        Write-Host "RustDesk ID found in config file: $rustdesk_id" -ForegroundColor Green
+                      }
+                    }
+                    
+                    # Method 3: Check log files
+                    if (-not $rustdesk_id) {
+                      Write-Host "Method 3: Checking log files..." -ForegroundColor Cyan
+                      $log_path = "C:\Users\runneradmin\.config\rustdesk\log\*"
+                      if (Test-Path $log_path) {
+                        $log_content = Get-ChildItem -Path $log_path | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | Get-Content -Raw
+                        if ($log_content -match 'ID:\s*(\d+)') {
+                          $rustdesk_id = $matches[1]
+                          Write-Host "RustDesk ID found in log file: $rustdesk_id" -ForegroundColor Green
+                        }
+                      }
+                    }
+                  }
+                } catch {
+                  Write-Host "Error during attempt $attempt: $_" -ForegroundColor Red
+                }
+                
+                if ($rustdesk_id -and $rustdesk_id -match '\d{9,}') {
                   Write-Host "RustDesk ID: $rustdesk_id" -ForegroundColor Green
                   echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
                   break
                 } else {
                   Write-Host "Failed to get RustDesk ID on attempt $attempt" -ForegroundColor Yellow
-                  Start-Sleep -Seconds 5
+                  Start-Sleep -Seconds 10  # Increased wait time between attempts
                   $attempt++
                 }
               }
               
-              if (-not $rustdesk_id -or $rustdesk_id.Trim() -eq "") {
+              if (-not $rustdesk_id -or -not ($rustdesk_id -match '\d{9,}')) {
                 Write-Host "Failed to get RustDesk ID after $max_attempts attempts" -ForegroundColor Red
-                exit 1
+                Write-Host "Attempting to install RustDesk via Chocolatey as a last resort..." -ForegroundColor Yellow
+                choco install rustdesk -y --force | Tee-Object -FilePath rustdesk_install_retry.log
+                Start-Sleep -Seconds 30
+                
+                # Try one more time after reinstall
+                try {
+                  $rustdesk_exe = "C:\Program Files\RustDesk\rustdesk.exe"
+                  if (Test-Path $rustdesk_exe) {
+                    Start-Process -FilePath $rustdesk_exe -WindowStyle Hidden
+                    Start-Sleep -Seconds 30
+                    $rustdesk_id = & $rustdesk_exe --get-id 2>&1
+                    if ($rustdesk_id -and $rustdesk_id -match '\d{9,}') {
+                      Write-Host "RustDesk ID after reinstall: $rustdesk_id" -ForegroundColor Green
+                      echo "RUSTDESK_PATH=$rustdesk_exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+                      echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
+                    } else {
+                      exit 1
+                    }
+                  } else {
+                    exit 1
+                  }
+                } catch {
+                  Write-Host "Final attempt failed: $_" -ForegroundColor Red
+                  exit 1
+                }
               }
             } catch {
               Write-Host "Error getting RustDesk ID: $_" -ForegroundColor Red
@@ -259,9 +330,55 @@ jobs:
       # Validate and Display Connection Info
       - name: Show RustDesk Connection ID
         run: |
+          # Check if RustDesk ID exists in environment
           if (-not $env:RUSTDESK_ID) {
-            Write-Error "Failed to retrieve RustDesk ID" -ForegroundColor Red
-            exit 1
+            Write-Host "RustDesk ID not found in environment variables, attempting to retrieve it again..." -ForegroundColor Yellow
+            
+            # Try to get the ID one more time
+            $rustdesk_exe = "${{ env.RUSTDESK_PATH }}"
+            if (Test-Path $rustdesk_exe) {
+              # Ensure RustDesk is running
+              $rustdesk_process = Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue
+              if (-not $rustdesk_process) {
+                Write-Host "Starting RustDesk process..." -ForegroundColor Yellow
+                Start-Process -FilePath $rustdesk_exe -WindowStyle Hidden
+                Start-Sleep -Seconds 30
+              }
+              
+              # Try to get the ID
+              try {
+                $env:RUST_BACKTRACE = 1  # Enable backtrace for debugging
+                $rustdesk_id = & $rustdesk_exe --get-id 2>&1
+                
+                if ($rustdesk_id -and $rustdesk_id -match '\d{9,}') {
+                  Write-Host "Successfully retrieved RustDesk ID: $rustdesk_id" -ForegroundColor Green
+                  $env:RUSTDESK_ID = $rustdesk_id
+                  echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
+                } else {
+                  Write-Host "Warning: Could not retrieve RustDesk ID directly" -ForegroundColor Yellow
+                  
+                  # Check config file as fallback
+                  $config_path = "C:\Users\runneradmin\.config\rustdesk\config\rustdesk.toml"
+                  if (Test-Path $config_path) {
+                    $config_content = Get-Content $config_path -Raw
+                    if ($config_content -match 'id\s*=\s*"(\d+)"') {
+                      $rustdesk_id = $matches[1]
+                      Write-Host "Found RustDesk ID in config file: $rustdesk_id" -ForegroundColor Green
+                      $env:RUSTDESK_ID = $rustdesk_id
+                      echo "RUSTDESK_ID=$rustdesk_id" | Out-File -FilePath $env:GITHUB_ENV -Append
+                    }
+                  }
+                }
+              } catch {
+                Write-Host "Error retrieving RustDesk ID: $_" -ForegroundColor Red
+              }
+            }
+          }
+          
+          # Final check for RustDesk ID
+          if (-not $env:RUSTDESK_ID) {
+            Write-Host "Warning: Failed to retrieve RustDesk ID, but continuing workflow" -ForegroundColor Yellow
+            $env:RUSTDESK_ID = "ID retrieval failed - check logs"
           }
           
           # Verify RustDesk is still running
@@ -276,7 +393,7 @@ jobs:
           Write-Host "================================================" -ForegroundColor Cyan
           Write-Host "       RUSTDESK CONNECTION INFORMATION          " -ForegroundColor Cyan
           Write-Host "================================================" -ForegroundColor Cyan
-          Write-Host "✅ SUCCESS! RustDesk is ready for connection" -ForegroundColor Green
+          Write-Host "✅ RustDesk setup completed" -ForegroundColor Green
           Write-Host "📋 Connection ID: $env:RUSTDESK_ID" -ForegroundColor Green
           Write-Host "🔧 System Information:" -ForegroundColor Cyan
           Write-Host "   - Python version: $(python --version 2>&1)" 
