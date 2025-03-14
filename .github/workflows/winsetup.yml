@@ -123,10 +123,13 @@ jobs:
             exit 1
           }
 
-      # Display Connection Info
-      - name: Display Connection Info
+      # Validate and Display Connection Info
+      - name: Show RustDesk Connection ID
         run: |
+          if (-not $env:RUSTDESK_ID) {
+            Write-Error "Failed to retrieve RustDesk ID"
+            exit 1
+          }
+          Write-Host "SUCCESS! Use this ID to connect: $env:RUSTDESK_ID"
           Write-Host "------------------------------------------------"
-          Write-Host "AnyDesk ID: ${{ env.ANYDESK_ID }}"
-          Write-Host "RustDesk ID: ${{ env.RUSTDESK_ID }}"
-          Write-Host "------------------------------------------------"
+          Write-Host "RUSTDESK_ID=$env:RUSTDESK_ID" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
